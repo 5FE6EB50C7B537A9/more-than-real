@@ -1,11 +1,10 @@
 /** TODO **
-Surreal.toString
-Surreal.minus
 Set.concat
 Surreal.times
 **/
 (function(){
-  function leq(surX, surY) {
+  // inequalities
+  function leq(surX, surY) { // !(y <= XL) && !(YR <= x)
     var i;
     for (i = 0; i != surX.L.length; i++) {
       if (leq(surY, surX.L.value[i])) {
@@ -19,75 +18,104 @@ Surreal.times
     }
     return true;
   }
-  function geq(surX, surY) {
+  function geq(surX, surY) { // !(y => XR) && !(YL => x)
+    return leq(surY, surX);
     var i;
-    for (i = 0; i != surY.L.length; i++) {
-      if (leq(surX, surY.L.value[i])) {
+    for (i = 0; i != surX.R.length; i++) {
+      if (geq(surY, surX.R.value[i])) {
         return false;
       }
     }
-    for (i = 0; i != surX.R.length; i++) {
-      if (leq(surX.R.value[i], surY)) {
+    for (i = 0; i != surY.L.length; i++) {
+      if (geq(surY.L.value[i], surX)) {
         return false;
       }
     }
     return true;
   }
   function lt(surX, surY) {
-    var i;
-    for (i = 0; i != surY.L.length; i++) {
-      if (leq(surX, surY.L.value[i])) {
-        return true;
-      }
-    }
-    for (i = 0; i != surX.R.length; i++) {
-      if (leq(surX.R.value[i], surY)) {
-        return true;
-      }
-    }
-    return false;
+    return!geq(surX, surY);
   }
   function gt(surX, surY) {
-    var i;
-    for (i = 0; i != surX.L.length; i++) {
-      if (leq(surY, surX.L.value[i])) {
-        return true;
-      }
-    }
-    for (i = 0; i != surY.R.length; i++) {
-      if (leq(surY.R.value[i], surX)) {
-        return true;
-      }
-    }
-    return false;
+    return!leq(surX, surY);
   }
   function eq(surX, surY) {
     return leq(surX, surY) && geq(surX, surY);
   }
   function neq(surX, surY) {
-    return lt(surX, surY) && gt(surX, surY);
+    return lt(surX, surY) || gt(surX, surY);
   }
-  function changeSign_Set(set) {
-    if (set.empty) return set;
-    return set.value.map(function(surA){
-      return changeSign_Surreal(surA);
+  // random stuff
+  function warpSurreal(fn) {
+    return function(surX, surY) {
+      if (this instanceof Surreal) {
+        return fn(this, surX);
+      }
+      return fn(surX, surY);
+    }
+  }
+  function stringify_Set(setA) {
+    if (setA.empty) return "{}";
+    return "{" + setA.value.map(stringify_Surreal).join(",") + "}";
+  }
+  function stringify_Surreal(surA) {
+    if (surA.empty) return "{{},{}}";
+    return "{"+ stringify_Set(surA.L) + "," + stringify_Set(surA.R) + "}";
+  }
+  function setConcat(setX, setY) {
+    return new Set(setX.value.concat(setY.value));
+    /* hacky */
+    var min = zero, max = zero;
+    if (setX.empty) return setY;
+    if (setY.empty) return setY;
+    min = gt(setX.min, setY.min)
+        ? setX.min
+        : setY.min;
+    max = lt(setX.max, setY.max)
+        ? setX.max
+        : setY.max;
+    return new Set([min, max]);
+  }
+  // operations
+  function opposite_Set(setA) {
+    if (setA.empty) return setA;
+    return setA.value.map(function(surA){
+      return opposite_Surreal(surA);
     })
   }
-  function changeSign_Surreal(surA) {
+  function opposite_Surreal(surA) {
     if (surA.empty) return surA;
-    return new Surreal(changeSign_Set(surA.R), changeSign_Set(surA.L));
+    return new Surreal(opposite_Set(surA.R), opposite_Set(surA.L));
   }
-  function addition_Set(surX, set) {
-    if (set.empty) return [];
-    return set.value.map(function(surY){
+  function addition_Set(surX, setA) {
+    if (setA.empty) return setA;
+    return new Set(setA.value.map(function(surY){
       return addition_Surreal(surX, surY);
-    })
+    }))
   }
   function addition_Surreal(surX, surY) {
-    return new Surreal(new Set(addition_Set(surX, surY.L).concat(addition_Set(surY, surX.L)))
-                     , new Set(addition_Set(surX, surY.R).concat(addition_Set(surY, surX.R))))
+    return new Surreal(setConcat(addition_Set(surX, surY.L), addition_Set(surY, surX.L))
+                      ,setConcat(addition_Set(surX, surY.R), addition_Set(surY, surX.R)))
   }
-  function Set(value, bypass) {
+  function subtraction(surX, surY) {
+    return addition_Surreal(surX, opposite_Surreal(surY));
+  }
+  // ab = {ALb + aBL − ALBL, ARb + aBR − ARBR | ALb + aBR − ALBR, ARb + aBL − ARBL}
+  function multiplication_Set(surX, setA) {
+    if (surX.empty || setA.empty) return setA;
+  }
+
+  function multiplication_Surreal(surX, surY) {
+    if (surX.empty) return surX;
+    if (eq(surX, one_positive)) return surY;
+    if (eq(surX, one_negative)) return opposite_Surreal(surY);
+    if (surY.empty) return surX;
+    if (eq(surY, one_positive)) return surX;
+    if (eq(surY, one_negative)) return opposite_Surreal(surX);
+    
+  }
+  // objects
+  function Set(value) {
     if (!(this instanceof Set)) return new Set(value, false);
     /**
      * this.value (Array)
@@ -106,59 +134,46 @@ Surreal.times
       , i = 0
       , j = 0
       , min, max, cur;
-    if (!!bypass) {
-      this.value = value;
-      this.length = length;
-      if (length != 0) {
-        this.empty = false;
-        this.min = value[0];
-        this.max = value[length -1];
-      } else {
-        this.empty = true;
-      }
-    } else {
-      if (!(value instanceof Array)) {
-        value = new Array(value);
-      }
-      length = value.length;
-      while (i != length) {
-        cur = value[i];
-        if (cur instanceof Surreal && cur.valid == true) {
-          if (j != 0) {
-            if (!leq(min, cur)) {
-              min = cur;
-              sifted = [cur].concat(sifted);
-              j ++;
-            }
-            if (!leq(cur, max)) {
-              sifted = sifted.concat(cur);
-              max = cur;
-              j ++;
-            }
-          } else {
-            min = cur;
-            sifted[j] = cur;
-            max = cur;
-            j = 1;
-          }
-        }
-        i ++;
-      }
-      if (j == 0) {
-        this.value = [];
-        this.length = 0;
-        this.empty = true;
-      } else {
-        this.value = sifted.slice();
-        this.length = j;
-        this.empty = false;
-        this.min = min;
-        this.max = max;
-      }
+    if (!(value instanceof Array)) {
+      value = new Array(value);
     }
-    return this;
+    length = value.length;
+    while (i != length) {
+      cur = value[i];
+      if (cur instanceof Surreal && cur.valid == true) {
+        if (j != 0) {
+          if (!leq(min, cur)) {
+           min = cur;
+            sifted = [cur].concat(sifted);
+            j ++;
+          }
+          if (!leq(cur, max)) {
+            sifted = sifted.concat(cur);
+            max = cur;
+            j ++;
+          }
+        } else {
+          min = cur;
+          sifted[j] = cur;
+          max = cur;
+          j = 1;
+        }
+      }
+      i ++;
+    }
+    if (j == 0) {
+      this.value = [];
+      this.length = 0;
+      this.empty = true;
+    } else {
+      this.value = sifted.slice();
+      this.length = j;
+      this.empty = false;
+      this.min = min;
+      this.max = max;
+    }
   }
-  function Surreal(setL, setR, bypass) {
+  function Surreal(setL, setR) {
     if (!(this instanceof Surreal)) return new Surreal(setL, setR, false);
     /**
      * this.L (Set)
@@ -172,12 +187,6 @@ Surreal.times
      */
     var i = 0, j = 0, a = 0, b = 0
       , valid = true, sur;
-    if (!!bypass) {
-      this.L = setL;
-      this.R = setR;
-      this.valid = true;
-      return this;
-    }
     if (!(setL instanceof Set)) {
       setL = new Set(setL);
     }
@@ -189,8 +198,8 @@ Surreal.times
     a = setR.length;
     b = setL.length;
     if (setL.empty && setR.empty) {
-      this.valid = true;
       this.empty = true;
+      this.valid = true;
       return this;
     }
     this.empty = false;
@@ -209,58 +218,43 @@ Surreal.times
       }
     }
     this.valid = valid;
-    return this;
-  }
-  function warpSurreal(fn) {
-    return function(surX, surY) {
-      if (this instanceof Surreal) {
-        return fn(this, surX);
-      }
-      return fn(surX, surY);
-    }
   }
 
   // inequalities
   Surreal.prototype.lessOrEqual = warpSurreal(leq);
-  Surreal.prototype.greaterOrEqual = warpSurreal(geq);
+  Surreal.prototype.moreOrEqual = warpSurreal(geq);
   Surreal.prototype.less = warpSurreal(lt);
-  Surreal.prototype.greater = warpSurreal(gt);
+  Surreal.prototype.more = warpSurreal(gt);
   Surreal.prototype.equal = warpSurreal(eq);
   Surreal.prototype.notEqual = warpSurreal(neq);
   // operations
+  Surreal.prototype.opposite = warpSurreal(opposite_Surreal);
   Surreal.prototype.plus = warpSurreal(addition_Surreal);
-  Surreal.prototype.minus = warpSurreal("subtraction");
+  Surreal.prototype.minus = warpSurreal(subtraction);
   Surreal.prototype.times = warpSurreal("multiplication");
-  // dunno
-  Surreal.prototype.changeSign = function (surX) {
-    if (this instanceof Surreal) {
-      return changeSign_Surreal(this);
-    }
-    return changeSign_Surreal(surX);
-  }
 
-  window.Set = window.Set || Set;
+  Surreal.prototype.toString = warpSurreal(stringify_Surreal);
+
+  window.Ensemble = window.Ensemble || Set;
   window.Surreal = window.Surreal || Surreal;
 }());
 
 // random tests
 
-time = +new Date();
-zero = new Surreal(); // console.log(zero);
-// console.log("---");
-oneP = new Surreal([zero], [    ]); // console.log(oneP);
-oneN = new Surreal([    ], [zero]); // console.log(oneN);
-star = new Surreal([zero], [zero]); // console.log(star);
-// console.log("---");
+time = Date.now();
+zero = new Surreal([    ], [    ]);
+oneP = new Surreal([zero], [    ]);
+oneN = new Surreal([    ], [zero]);
+star = new Surreal([zero], [zero]);
 // test number validate properly
-halves = [[              ],
-          [oneN          ],
-          [     zero     ],
-          [oneN,zero     ],
-          [          oneP],
-          [oneN,     oneP],
-          [     zero,oneP],
-          [oneN,zero,oneP]];
+halves = [new Ensemble([              ]),
+          new Ensemble([oneN          ]),
+          new Ensemble([     zero     ]),
+          new Ensemble([oneN,zero     ]),
+          new Ensemble([          oneP]),
+          new Ensemble([oneN,     oneP]),
+          new Ensemble([     zero,oneP]),
+          new Ensemble([oneN,zero,oneP])];
 expected = [[!0,!0,!0,!0,!0,!0,!0,!0],
             [!0,!1,!0,!1,!0,!1,!0,!1],
             [!0,!1,!1,!1,!0,!1,!1,!1],
@@ -271,34 +265,73 @@ expected = [[!0,!0,!0,!0,!0,!0,!0,!0],
             [!0,!1,!1,!1,!1,!1,!1,!1]];
 expected.forEach(function(sub, first){
   sub.forEach(function(result, second){
-    console.assert(new Surreal(halves[first], halves[second]).valid == result, first, second);
+    console.assert(new Surreal(halves[first], halves[second]).valid == result, first, second, result);
   })
 });
-twoP = new Surreal([oneP], [    ]); // console.log(twoP);
-twoN = new Surreal([    ], [oneN]); // console.log(twoN);
-halP = new Surreal([zero], [oneP]); // console.log(halP);
-halN = new Surreal([oneN], [zero]); // console.log(halN);
-// console.log("---");
-// test derived inequalities
-console.assert(Surreal.prototype.less(twoN, oneN));
-console.assert(Surreal.prototype.less(oneN, halN));
-console.assert(Surreal.prototype.less(halN, zero));
-console.assert(Surreal.prototype.less(zero, halP));
-console.assert(Surreal.prototype.less(halP, oneP));
-console.assert(Surreal.prototype.less(oneP, twoP));
-console.assert(zero.equal(new Surreal(oneN, oneP)));
-console.assert(zero.notEqual(new Surreal(oneP, oneN)));
+twoP = new Surreal([oneP], [    ]);
+twoN = new Surreal([    ], [oneN]);
+halP = new Surreal([zero], [oneP]);
+halN = new Surreal([oneN], [zero]);
+// test inequalities
+console.assert( oneP.less(twoP));
+console.assert( halP.less(oneP));
+console.assert( zero.less(halP));
+console.assert( halN.less(zero));
+console.assert( oneN.less(halN));
+console.assert( twoN.less(oneN));
+console.assert(!twoP.less(zero));
+console.assert(!twoP.less(twoN));
+console.assert(!zero.less(twoN));
+
+console.assert( twoP.more(oneP));
+console.assert( oneP.more(halP));
+console.assert( halP.more(zero));
+console.assert( zero.more(halN));
+console.assert( halN.more(oneN));
+console.assert( oneN.more(twoN));
+console.assert(!zero.more(twoP));
+console.assert(!twoN.more(twoP));
+console.assert(!twoN.more(zero));
+
+console.assert(new Surreal(twoN, twoP).equal(zero));
+console.assert(new Surreal(oneN, oneP).equal(zero));
+console.assert(new Surreal(halN, halP).equal(zero));
+console.assert(new Surreal(twoN, halN).notEqual(zero));
+console.assert(new Surreal(oneN, halN).notEqual(zero));
+console.assert(new Surreal(halN, halN).notEqual(zero));
+// hue words
 console.assert(oneP.plus(oneP).equal(twoP));
-console.assert(twoP.changeSign().changeSign().equal(twoP));
-
-hue = (+new Date())-time;
-times = JSON.parse(localStorage.getItem("timing")||"[]").concat(hue);
-localStorage.setItem("timing", JSON.stringify(times));
-console.log("%d %d", hue, times.length);
-if (times.length < 488) location.reload();
-n = 0; times.forEach(function(a){n += a}); n;
-console.log([Math.min.apply(Math, times),
- (n/488).toFixed(2),
- Math.max.apply(Math, times)]);
-
-// after some extensive tesing (not really) tests take between 1ms and 28ms, mediam being at 2.26ms
+console.assert(halP.opposite().opposite().equal(halP));
+/*
+foo = new Surreal(twoN, halP); console.log(foo);
+bar = new Surreal(twoN, oneP); console.log(bar);
+taz = new Surreal(halN, twoP); console.log(taz);
+bar = bar.plus(taz); console.log(bar);
+taz = taz.plus(oneP);  console.log(taz);
+taz = taz.minus(foo); console.log(taz);
+taz = taz.minus(twoP); console.log(taz);
+taz = taz.plus(oneP); console.log(taz);
+taz = taz.minus(bar); console.log(taz);
+if (taz.equal(new Surreal())) {
+  document.body.innerHTML = taz.toString();
+} else {
+  document.body.innerHTML = "something failed";
+}
+*/
+/*
+timeDelta = Date.now()-time;
+times = JSON.parse(localStorage.getItem("timing")||"[]")
+times.push(timeDelta);
+if (times.length < 1e3) {
+  localStorage.setItem("timing", JSON.stringify(times));
+  location.reload();
+} else {
+  n = 0;
+  times.forEach(function(a){n += a});
+  console.log("%d %s %d"
+    , Math.min.apply(Math, times)
+    , (n/1e3).toFixed(2)
+    , Math.max.apply(Math, times));
+}
+*/
+// after some extensive tesing (not really) tests take between 1ms and 30ms, mediam being at 1.89ms
